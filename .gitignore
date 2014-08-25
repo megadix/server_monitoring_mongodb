@@ -1,0 +1,4 @@
+/.gradle
+/.idea
+/build
+/server_monitoring_riak.iml
