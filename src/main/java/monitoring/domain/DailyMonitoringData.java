@@ -11,7 +11,7 @@ import java.util.*;
 @Document
 public class DailyMonitoringData {
 
-    public static class Metadata {
+    public class Metadata {
         private String serverName;
         private Date date;
         private String[] metrics;
@@ -31,6 +31,7 @@ public class DailyMonitoringData {
 
         public void setServerName(String serverName) {
             this.serverName = serverName;
+            DailyMonitoringData.this.updateId();
         }
 
         public Date getDate() {
@@ -38,7 +39,8 @@ public class DailyMonitoringData {
         }
 
         public void setDate(Date date) {
-            this.date = date;
+            this.date = DateUtils.truncate(date, Calendar.DAY_OF_MONTH);
+            DailyMonitoringData.this.updateId();
         }
 
         public String[] getMetrics() {
@@ -63,13 +65,47 @@ public class DailyMonitoringData {
     public DailyMonitoringData(String serverName, Date day, String[] metrics) {
         this.id = formatId(serverName, day);
         this.metadata.setServerName(serverName);
-        this.metadata.setDate(DateUtils.truncate(day, Calendar.DAY_OF_MONTH));
+        this.metadata.setDate(day);
         this.metadata.setMetrics(metrics);
     }
 
-    public static String formatId(String serverName, Date day) {
-        String id = DateFormatUtils.dayFormat.format(day) + "/" + serverName;
+    public String getId() {
         return id;
+    }
+
+    public void setId(String id) {
+        this.id = id;
+    }
+
+    public Metadata getMetadata() {
+        return metadata;
+    }
+
+    public void setMetadata(Metadata metadata) {
+        this.metadata = metadata;
+        updateId();
+    }
+
+    public SortedMap<String, SortedMap<String, Map<String, Double>>> getData() {
+        return data;
+    }
+
+    public void setData(SortedMap<String, SortedMap<String, Map<String, Double>>> data) {
+        this.data = data;
+    }
+
+
+    public static String formatId(String serverName, Date day) {
+        if (serverName == null || day == null) {
+            return null;
+        }
+        // else
+        String id = serverName + "/" + DateFormatUtils.dayFormat.format(day);
+        return id;
+    }
+
+    private void updateId() {
+        this.id = formatId(metadata.serverName, metadata.date);
     }
 
     public void preallocateDay() {
@@ -111,22 +147,5 @@ public class DailyMonitoringData {
         minutesMap.put(minutesKey, samplesMap);
         data.put(hoursKey, minutesMap);
     }
-
-    public String getId() {
-        return id;
-    }
-
-    public void setId(String id) {
-        this.id = id;
-    }
-
-    public SortedMap<String, SortedMap<String, Map<String, Double>>> getData() {
-        return data;
-    }
-
-    public void setData(SortedMap<String, SortedMap<String, Map<String, Double>>> data) {
-        this.data = data;
-    }
-
 
 }

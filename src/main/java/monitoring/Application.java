@@ -5,6 +5,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.annotation.ComponentScan;
 
 @EnableAutoConfiguration
@@ -15,7 +16,8 @@ public class Application implements CommandLineRunner {
     private MonitoringService monitoringService;
 
     public static void main(String[] args) {
-        SpringApplication.run(Application.class, args);
+        SpringApplicationBuilder builder = new SpringApplicationBuilder(Application.class);
+        builder.headless(false).run(args);
     }
 
     @Override
@@ -31,6 +33,7 @@ public class Application implements CommandLineRunner {
 
         if ("SETUP".equalsIgnoreCase(args[0])) {
             monitoringService.setupExample();
+
         } else if ("RUN".equalsIgnoreCase(args[0])) {
             monitoringService.runExample();
         }

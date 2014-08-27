@@ -1,7 +1,20 @@
 package monitoring.service;
 
+import com.mongodb.BasicDBObject;
+import com.mongodb.DBObject;
+import com.mongodb.Mongo;
+import monitoring.DailyMonitoringDataReadConverter;
+import monitoring.DateFormatUtils;
 import monitoring.domain.DailyMonitoringData;
 import org.apache.commons.lang3.time.DateUtils;
+import org.jfree.chart.ChartFactory;
+import org.jfree.chart.ChartFrame;
+import org.jfree.chart.JFreeChart;
+import org.jfree.chart.plot.Plot;
+import org.jfree.chart.plot.XYPlot;
+import org.jfree.data.time.Hour;
+import org.jfree.data.time.TimeSeries;
+import org.jfree.data.time.TimeSeriesCollection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,8 +25,7 @@ import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 import util.data.DataSimulationUtils;
 
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
+import java.text.ParseException;
 import java.util.*;
 
 @Service
@@ -48,21 +60,114 @@ public class MonitoringService {
     public static final String COLLECTION_NAME = "monitoringData";
 
     private Logger log = LoggerFactory.getLogger(this.getClass());
-    private DateFormat timestampFormat = new SimpleDateFormat("yyyyMMdd_HHmmss");
+    private Mongo mongo;
     private MongoTemplate mongoTemplate;
+
+    @Autowired
+    public void setMongo(Mongo mongo) {
+        this.mongo = mongo;
+    }
 
     @Autowired
     public void setMongoTemplate(MongoTemplate mongoTemplate) {
         this.mongoTemplate = mongoTemplate;
     }
 
+    /**
+     * Query database and aggregate results per hour.
+     *
+     * @param serverName
+     * @param startDate
+     * @param endDate
+     * @return
+     */
+    public SortedMap<Date, Map<String, Double>> aggregatedValuesByHour(String serverName, Date startDate, Date endDate) {
+
+        SortedMap<Date, Map<String, Double>> result = new TreeMap<>();
+
+        Calendar cal = DateUtils.toCalendar(startDate);
+
+        // for each day...
+        while (cal.getTime().before(endDate)) {
+
+            // build key
+            String key = DailyMonitoringData.formatId(serverName, cal.getTime());
+            // find data
+
+            // FIXME configure custom converters!
+            /*
+            DailyMonitoringData data = mongoTemplate.findById(
+                    new Query(Criteria.where("_id").is(key)),
+                    DailyMonitoringData.class);
+            */
+            DBObject doc = mongo.getDB("monitoring").getCollection("monitoringData").findOne(key);
+            DailyMonitoringData data = new DailyMonitoringDataReadConverter().convert(doc);
+
+            // not found?
+            if (data == null) {
+                continue;
+            }
+
+
+            // for each hour...
+            for (String hh : data.getData().keySet()) {
+                Map<String, Integer> samplesCount = new HashMap<>();
+                Map<String, Double> samplesTotals = new HashMap<>();
+
+                SortedMap<String, Map<String, Double>> minutes = data.getData().get(hh);
+
+                // for each minute...
+                for (String mm : minutes.keySet()) {
+                    Map<String, Double> sample = minutes.get(mm);
+                    // for each sample...
+                    for (String metric : sample.keySet()) {
+                        // update count
+                        if (samplesCount.containsKey(metric)) {
+                            samplesCount.put(metric, samplesCount.get(metric) + 1);
+                        } else {
+                            samplesCount.put(metric, 1);
+                        }
+
+                        // update total
+                        if (samplesTotals.containsKey(metric)) {
+                            samplesTotals.put(metric, samplesTotals.get(metric) + sample.get(metric));
+                        } else {
+                            samplesTotals.put(metric, sample.get(metric));
+                        }
+                    } // for each sample...
+                } // for each minute...
+
+                // build result entry for this hour
+                Map<String, Double> resultEntry = new HashMap<>();
+
+                for (String metric : samplesTotals.keySet()) {
+                    Double avg = samplesTotals.get(metric) / samplesCount.get(metric);
+                    resultEntry.put(metric, avg);
+                }
+
+                result.put(cal.getTime(), resultEntry);
+
+            } // for each hour...
+
+            cal.add(Calendar.DAY_OF_MONTH, 1);
+
+        } // // for each day...
+
+        return result;
+    }
+
+    /**
+     * Setup example: database, data, etc.
+     *
+     * @throws Exception
+     */
     public void setupExample() throws Exception {
 
         mongoTemplate.dropCollection(COLLECTION_NAME);
         mongoTemplate.createCollection(COLLECTION_NAME);
 
-        Date startDate = timestampFormat.parse("20140101_000000");
-        Date endDate = timestampFormat.parse("20140107_000000");
+        Date startDate = DateFormatUtils.timestampFormat.parse("20140101_000000");
+        Date endDate = DateFormatUtils.timestampFormat.parse("20140108_000000");
 
         List<ExamplesServerConf> configurations = new ArrayList<>();
         configurations.add(new ExamplesServerConf("ATTILA", 0.5, 0.01, 0.2, 0.05));
@@ -104,8 +209,40 @@ public class MonitoringService {
         }
     }
 
-    public void runExample() {
-        throw new UnsupportedOperationException("TODO runExample()");
+    public void runExample() throws ParseException {
+
+        // query aggregated view
+        SortedMap<Date, Map<String, Double>> view = aggregatedValuesByHour("ATTILA",
+                DateFormatUtils.timestampFormat.parse("20140101_000000"),
+                DateFormatUtils.timestampFormat.parse("20140108_000000"));
+
+        // build time series of "mem" and "cpu" metrics
+        TimeSeries mem = new TimeSeries("Mem");
+        TimeSeries cpu = new TimeSeries("Cpu");
+
+        for (Date date : view.keySet()) {
+            mem.add(new Hour(date), view.get(date).get("mem") * 100);
+            cpu.add(new Hour(date), view.get(date).get("cpu") * 100);
+        }
+
+        TimeSeriesCollection dataset = new TimeSeriesCollection();
+        dataset.addSeries(mem);
+        dataset.addSeries(cpu);
+
+        JFreeChart chart = ChartFactory.createTimeSeriesChart(
+                "Server Load",
+                "Time",
+                "%",
+                dataset,
+                true, true, false
+        );
+
+        XYPlot plot = (XYPlot) chart.getPlot();
+        plot.getRangeAxis().setRange(0.0, 100.0);
+
+        ChartFrame frame = new ChartFrame("Demo", chart);
+        frame.pack();
+        frame.setVisible(true);
     }
 
     /**

@@ -43,6 +43,8 @@
     <orderEntry type="library" exported="" name="Gradle: spring-expression-4.0.6.RELEASE" level="project" />
     <orderEntry type="library" exported="" name="Gradle: groovy-all-2.3.3" level="project" />
     <orderEntry type="library" exported="" name="Gradle: commons-lang3-3.3.2" level="project" />
+    <orderEntry type="library" exported="" name="Gradle: jfreechart-1.0.19" level="project" />
+    <orderEntry type="library" exported="" name="Gradle: jcommon-1.0.23" level="project" />
   </component>
 </module>
 
