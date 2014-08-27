@@ -1,67 +1,34 @@
 package monitoring.service;
 
-import com.mongodb.BasicDBObject;
 import com.mongodb.DBObject;
 import com.mongodb.Mongo;
 import monitoring.DailyMonitoringDataReadConverter;
-import monitoring.DateFormatUtils;
 import monitoring.domain.DailyMonitoringData;
 import org.apache.commons.lang3.time.DateUtils;
-import org.jfree.chart.ChartFactory;
-import org.jfree.chart.ChartFrame;
-import org.jfree.chart.JFreeChart;
-import org.jfree.chart.plot.Plot;
-import org.jfree.chart.plot.XYPlot;
-import org.jfree.data.time.Hour;
-import org.jfree.data.time.TimeSeries;
-import org.jfree.data.time.TimeSeriesCollection;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.mongo.MongoProperties;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
-import util.data.DataSimulationUtils;
 
-import java.text.ParseException;
 import java.util.*;
 
 @Service
 public class MonitoringService {
 
-    static class ExamplesServerConf {
-        String serverName;
-        double memMean;
-        double memSd;
-        double cpuMean;
-        double cpuSd;
-
-        ExamplesServerConf(String serverName, double memMean, double memSd, double cpuMean, double cpuSd) {
-            this.serverName = serverName;
-            this.memMean = memMean;
-            this.memSd = memSd;
-            this.cpuMean = cpuMean;
-            this.cpuSd = cpuSd;
-        }
-    }
-
-    public static class Sample {
-        String name;
-        Double value;
-
-        public Sample(String name, Double value) {
-            this.name = name;
-            this.value = value;
-        }
-    }
-
-    public static final String COLLECTION_NAME = "monitoringData";
-
-    private Logger log = LoggerFactory.getLogger(this.getClass());
+    @Autowired
+    private MongoProperties mongoProperties;
     private Mongo mongo;
     private MongoTemplate mongoTemplate;
+    private String collectionName;
+
+    @Autowired
+    public void setMongoProperties(MongoProperties mongoProperties) {
+        this.mongoProperties = mongoProperties;
+    }
 
     @Autowired
     public void setMongo(Mongo mongo) {
@@ -71,6 +38,15 @@ public class MonitoringService {
     @Autowired
     public void setMongoTemplate(MongoTemplate mongoTemplate) {
         this.mongoTemplate = mongoTemplate;
+    }
+
+    @Value("${monitoring.collectionName}")
+    public void setCollectionName(String collectionName) {
+        this.collectionName = collectionName;
+    }
+
+    public String getCollectionName() {
+        return collectionName;
     }
 
     /**
@@ -100,14 +76,13 @@ public class MonitoringService {
                     new Query(Criteria.where("_id").is(key)),
                     DailyMonitoringData.class);
             */
-            DBObject doc = mongo.getDB("monitoring").getCollection("monitoringData").findOne(key);
+            DBObject doc = mongo.getDB(mongoProperties.getDatabase()).getCollection(collectionName).findOne(key);
             DailyMonitoringData data = new DailyMonitoringDataReadConverter().convert(doc);
 
             // not found?
             if (data == null) {
                 continue;
             }
-
 
             // for each hour...
             for (String hh : data.getData().keySet()) {
@@ -145,7 +120,9 @@ public class MonitoringService {
                     resultEntry.put(metric, avg);
                 }
 
-                result.put(cal.getTime(), resultEntry);
+                Calendar calEntry = DateUtils.truncate(cal, Calendar.DAY_OF_MONTH);
+                calEntry.add(Calendar.HOUR_OF_DAY, Integer.valueOf(hh));
+                result.put(calEntry.getTime(), resultEntry);
 
             } // for each hour...
 
@@ -157,117 +134,28 @@ public class MonitoringService {
     }
 
     /**
-     * Setup example: database, data, etc.
-     *
-     * @throws Exception
-     */
-    public void setupExample() throws Exception {
-
-        mongoTemplate.dropCollection(COLLECTION_NAME);
-        mongoTemplate.createCollection(COLLECTION_NAME);
-
-        Date startDate = DateFormatUtils.timestampFormat.parse("20140101_000000");
-        Date endDate = DateFormatUtils.timestampFormat.parse("20140108_000000");
-
-        List<ExamplesServerConf> configurations = new ArrayList<>();
-        configurations.add(new ExamplesServerConf("ATTILA", 0.5, 0.01, 0.2, 0.05));
-        configurations.add(new ExamplesServerConf("BUBBA", 0.3, 0.2, 0.5, 0.1));
-        configurations.add(new ExamplesServerConf("CALIGOLA", 0.1, 0.2, 0.8, 0.2));
-        configurations.add(new ExamplesServerConf("DEMOTAPE", 0.8, 0.3, 0.7, 0.4));
-
-        String[] metrics = {"mem", "cpu"};
-
-        for (ExamplesServerConf conf : configurations) {
-
-            // pre-allocate empty data for each day
-            Calendar cal = DateUtils.toCalendar(DateUtils.truncate(startDate, Calendar.DAY_OF_MONTH));
-            while (cal.getTime().before(endDate)) {
-                DailyMonitoringData entry = new DailyMonitoringData(conf.serverName, cal.getTime(), metrics);
-                entry.preallocateDay();
-                mongoTemplate.insert(entry, COLLECTION_NAME);
-                cal.add(Calendar.DAY_OF_MONTH, 1);
-            }
-
-            SortedMap<Date, Double> memData = DataSimulationUtils.simulateServerLoad(startDate, endDate, 1,
-                    conf.memMean, conf.memSd);
-            SortedMap<Date, Double> cpuData = DataSimulationUtils.simulateServerLoad(startDate, endDate, 1,
-                    conf.memMean, conf.memSd);
-
-            int i = 0;
-            for (Date timestamp : memData.keySet()) {
-                List<Sample> samples = new ArrayList<>(2);
-                samples.add(new Sample("mem", memData.get(timestamp)));
-                samples.add(new Sample("cpu", cpuData.get(timestamp)));
-
-                addSamples(conf.serverName, timestamp, samples);
-
-                i++;
-                if (i > 0 && i % 100 == 0) {
-                    log.info("Server: " + conf.serverName + ", saved " + i + " samples");
-                }
-            }
-        }
-    }
-
-    public void runExample() throws ParseException {
-
-        // query aggregated view
-        SortedMap<Date, Map<String, Double>> view = aggregatedValuesByHour("ATTILA",
-                DateFormatUtils.timestampFormat.parse("20140101_000000"),
-                DateFormatUtils.timestampFormat.parse("20140108_000000"));
-
-        // build time series of "mem" and "cpu" metrics
-        TimeSeries mem = new TimeSeries("Mem");
-        TimeSeries cpu = new TimeSeries("Cpu");
-
-        for (Date date : view.keySet()) {
-            mem.add(new Hour(date), view.get(date).get("mem") * 100);
-            cpu.add(new Hour(date), view.get(date).get("cpu") * 100);
-        }
-
-        TimeSeriesCollection dataset = new TimeSeriesCollection();
-        dataset.addSeries(mem);
-        dataset.addSeries(cpu);
-
-        JFreeChart chart = ChartFactory.createTimeSeriesChart(
-                "Server Load",
-                "Time",
-                "%",
-                dataset,
-                true, true, false
-        );
-
-        XYPlot plot = (XYPlot) chart.getPlot();
-        plot.getRangeAxis().setRange(0.0, 100.0);
-
-        ChartFrame frame = new ChartFrame("Demo", chart);
-        frame.pack();
-        frame.setVisible(true);
-    }
-
-    /**
-     * Store a sample measurement
+     * Store a sample measurement, Map of: name =&gt; value
      *
      * @param serverName
      * @param timestamp
-     * @param samples    list of samples to store
+     * @param samples     samples to store: name =&gt; value
      */
-    public void addSamples(String serverName, Date timestamp, List<Sample> samples) {
+    public void addSample(String serverName, Date timestamp, Map<String, Double> samples) {
         String id = DailyMonitoringData.formatId(serverName, timestamp);
         Calendar cal = DateUtils.toCalendar(timestamp);
         Update update = new Update();
-        for (Sample sample : samples) {
+
+        for (Map.Entry<String, Double> sample : samples.entrySet()) {
             String hoursKey = String.format("%02d", cal.get(Calendar.HOUR_OF_DAY));
             String minutesKey = String.format("%02d", cal.get(Calendar.MINUTE));
-
-            String key = "data." + hoursKey + "." + minutesKey + "." + sample.name;
-            update.set(key, sample.value);
+            String key = "data." + hoursKey + "." + minutesKey + "." + sample.getKey();
+            update.set(key, sample.getValue());
         }
 
         mongoTemplate.upsert(
                 new Query(Criteria.where("_id").is(id)),
                 update,
-                COLLECTION_NAME
+                collectionName
         );
     }
 
