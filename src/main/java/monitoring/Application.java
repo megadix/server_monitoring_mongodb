@@ -165,8 +165,8 @@ public class Application implements CommandLineRunner {
         if (args.length < 1) {
             System.err.println("Missing command-line arguments: COMMAND");
             System.err.println("COMMAND:");
-            System.err.println("  setup : create database, sample data and functions");
-            System.err.println("  run : run example client");
+            System.err.println("  SETUP : create database, sample data and functions");
+            System.err.println("  RUN : run example client");
 
             System.exit(1);
         }
