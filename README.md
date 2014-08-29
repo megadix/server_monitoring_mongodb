@@ -78,13 +78,19 @@ On Linux/Unix:
 
     Total time: 20.612 secs
 
-The build process creates a /build sub-directory, with all the artefacts.
+The build process creates a /build sub-directory containing all the artefacts.
 
 ## Setup test data
 
 To create test data you must run the application in SETUP mode:
 
+On Windows:
+
     java -jar build\libs\megadix-monitoring-mongodb-1.0.0.jar SETUP
+
+On Linux/Unix:
+
+    java -jar build/libs/megadix-monitoring-mongodb-1.0.0.jar SETUP
 
 The output will be similar to this (cut for brevity):
 
@@ -126,7 +132,13 @@ The output will be similar to this (cut for brevity):
 
 To view and example data extraction, execute the application in RUN mode:
 
+On Windows:
+
     java -jar build\libs\megadix-monitoring-mongodb-1.0.0.jar RUN
+
+On Linux/Unix:
+
+    java -jar build/libs/megadix-monitoring-mongodb-1.0.0.jar RUN
 
 The application will extract data, process it, and display a window with a chart:
 
