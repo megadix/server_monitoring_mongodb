@@ -124,7 +124,7 @@ The output will be similar to this (cut for brevity):
 
 ### Run example
 
-To view and example data extrasction, execute the application in RUN mode:
+To view and example data extraction, execute the application in RUN mode:
 
     java -jar build\libs\megadix-monitoring-mongodb-1.0.0.jar RUN
 
